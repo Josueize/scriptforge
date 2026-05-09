@@ -1,0 +1,48 @@
+{
+  "name": "ScriptForge — Content Approved",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": { "path": "content-approved", "method": "POST" },
+      "position": [240, 300]
+    },
+    {
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.slack",
+      "parameters": {
+        "channel": "#content-approvals",
+        "text": "Content approved: {{ $json.content_id }} — platforms: {{ $json.platforms.join(', ') }}"
+      },
+      "position": [480, 200]
+    },
+    {
+      "name": "Create Google Doc",
+      "type": "n8n-nodes-base.googleDocs",
+      "parameters": {
+        "operation": "create",
+        "title": "Approved Content — {{ $json.content_id }}"
+      },
+      "position": [480, 340]
+    },
+    {
+      "name": "Schedule CMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "https://your-cms.com/api/schedule",
+        "body": "={{ JSON.stringify($json) }}"
+      },
+      "position": [480, 480]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[
+        { "node": "Slack Notify", "type": "main", "index": 0 },
+        { "node": "Create Google Doc", "type": "main", "index": 0 },
+        { "node": "Schedule CMS", "type": "main", "index": 0 }
+      ]]
+    }
+  }
+}
