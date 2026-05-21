@@ -27,3 +27,19 @@ The AI layer uses two models deliberately — each doing what it's better at. Re
 ## Why this workflow first
 
 Because it eliminates the most repetitive, high-volume work at the top of the content funnel. Every piece of content the team produces passes through this pipeline. Automating it compounds across every piece of content, every week, as the team scales.
+
+
+
+
+---
+
+
+## Author
+
+**Izehiuwa Igiebor Omogiate (Joshua)**  
+Full Stack Developer  
+GitHub: https://github.com/Josueize
+LinkedIn: https://www.linkedin.com/in/izehiuwa-igiebor-b9753919b/
+Email: izategbese1@gmail.com
+
+
