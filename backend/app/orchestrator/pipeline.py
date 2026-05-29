@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Union
 
 from app.services.openai_service import OpenAIService
 from app.services.claude_service import ClaudeService
@@ -49,14 +50,17 @@ class ContentPipeline:
         _validate_script(refined_script)
 
         # Step 4: Parallel platform formatting
-        results = await asyncio.gather(
-            *[self._claude.format_for_platform(refined_script, p, request.tone) for p in request.platforms],
-            return_exceptions=True,
+        tasks = [
+            self._claude.format_for_platform(refined_script, p, request.tone)
+            for p in request.platforms
+        ]
+        results: list[Union[tuple[str, int], BaseException]] = await asyncio.gather(
+            *tasks, return_exceptions=True
         )
 
         platforms: list[PlatformContent] = []
         for platform, result in zip(request.platforms, results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error("Platform %s failed: %s", platform, result)
                 continue
             content, tokens = result

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from anthropic import AsyncAnthropic, APIError, RateLimitError
+from anthropic.types import TextBlock
 
 from app.core.config import settings
 
@@ -33,7 +34,8 @@ class ClaudeService:
                     messages=[{"role": "user", "content": f"Tone target: {tone}\n\nScript:\n\n{script}"}],
                     timeout=settings.request_timeout,
                 )
-                refined = response.content[0].text
+                block = response.content[0]
+                refined = block.text if isinstance(block, TextBlock) else ""
                 tokens = response.usage.input_tokens + response.usage.output_tokens
                 logger.info("Claude refinement complete | tokens=%d", tokens)
                 return refined, tokens
@@ -59,7 +61,8 @@ class ClaudeService:
                     )}],
                     timeout=settings.request_timeout,
                 )
-                content = response.content[0].text
+                block = response.content[0]
+                content = block.text if isinstance(block, TextBlock) else ""
                 tokens = response.usage.input_tokens + response.usage.output_tokens
                 return content, tokens
 
