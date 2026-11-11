@@ -1,12 +1,16 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Union
+from datetime import UTC, datetime
 
-from app.services.openai_service import OpenAIService
+from app.models.schemas import (
+    GenerateMetadata,
+    GenerateRequest,
+    GenerateResponse,
+    PlatformContent,
+)
 from app.services.claude_service import ClaudeService
-from app.models.schemas import GenerateRequest, GenerateResponse, PlatformContent, GenerateMetadata
+from app.services.openai_service import OpenAIService
 
 logger = logging.getLogger("scriptforge.pipeline")
 
@@ -36,14 +40,23 @@ class ContentPipeline:
         content_id = str(uuid.uuid4())
         total_tokens = 0
 
-        logger.info("Pipeline started | id=%s | tone=%s | length=%s", content_id, request.tone, request.length)
+        logger.info(
+            "Pipeline started | id=%s | tone=%s | length=%s",
+            content_id,
+            request.tone,
+            request.length,
+        )
 
         # Step 1: OpenAI — initial generation
-        raw_script, tokens = await self._openai.generate_script(request.idea, request.tone, request.length)
+        raw_script, tokens = await self._openai.generate_script(
+            request.idea, request.tone, request.length
+        )
         total_tokens += tokens
 
         # Step 2: Claude — tone refinement
-        refined_script, tokens = await self._claude.refine_script(raw_script, request.tone)
+        refined_script, tokens = await self._claude.refine_script(
+            raw_script, request.tone
+        )
         total_tokens += tokens
 
         # Step 3: Validate
@@ -54,7 +67,7 @@ class ContentPipeline:
             self._claude.format_for_platform(refined_script, p, request.tone)
             for p in request.platforms
         ]
-        results: list[Union[tuple[str, int], BaseException]] = await asyncio.gather(
+        results: list[tuple[str, int] | BaseException] = await asyncio.gather(
             *tasks, return_exceptions=True
         )
 
@@ -65,13 +78,17 @@ class ContentPipeline:
                 continue
             content, tokens = result
             total_tokens += tokens
-            platforms.append(PlatformContent(
-                platform=platform,
-                content=content,
-                word_count=len(content.split()),
-            ))
+            platforms.append(
+                PlatformContent(
+                    platform=platform,
+                    content=content,
+                    word_count=len(content.split()),
+                )
+            )
 
-        logger.info("Pipeline complete | id=%s | total_tokens=%d", content_id, total_tokens)
+        logger.info(
+            "Pipeline complete | id=%s | total_tokens=%d", content_id, total_tokens
+        )
 
         return GenerateResponse(
             id=content_id,
@@ -80,7 +97,7 @@ class ContentPipeline:
             metadata=GenerateMetadata(
                 tone=request.tone,
                 length=request.length,
-                generated_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(UTC),
                 tokens_used=total_tokens,
             ),
         )

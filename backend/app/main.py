@@ -1,4 +1,3 @@
-
 import os
 from urllib.parse import urlparse
 
@@ -7,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import generate, health
 from app.core.logging import setup_logging
-
 
 # --------------------------------------------------
 # 1. Configure application logging
@@ -23,8 +21,7 @@ setup_logging()
 app = FastAPI(
     title="ScriptForge API",
     description=(
-        "Multi-agent AI content generation pipeline "
-        "for Blue Foxes AI Content Lab."
+        "Multi-agent AI content generation pipeline for Blue Foxes AI Content Lab."
     ),
     version="1.0.0",
 )
@@ -33,6 +30,7 @@ app = FastAPI(
 # --------------------------------------------------
 # 3. Configure allowed frontend origins
 # --------------------------------------------------
+
 
 def get_allowed_origins() -> list[str]:
     """
