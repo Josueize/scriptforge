@@ -1,5 +1,6 @@
 from datetime import datetime
-from sqlalchemy import String, DateTime, Integer, JSON
+
+from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 

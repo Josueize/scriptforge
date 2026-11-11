@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from openai import AsyncOpenAI, APIError, RateLimitError
+
+from openai import APIError, AsyncOpenAI, RateLimitError
 
 from app.core.config import settings
 
@@ -9,8 +10,8 @@ logger = logging.getLogger("scriptforge.openai")
 WORD_TARGETS = {"1": "130-150", "3": "420-450", "5": "690-740", "10": "1380-1450"}
 
 TONE_DIRECTIONS = {
-    "Dramatic":  "Tense, cinematic. Short punchy sentences. Vivid language. Think prestige documentary.",
-    "Neutral":   "Clear, balanced, journalistic. Accuracy over flair. Think BBC educational explainer.",
+    "Dramatic": "Tense, cinematic. Short punchy sentences. Vivid language. Think prestige documentary.",
+    "Neutral": "Clear, balanced, journalistic. Accuracy over flair. Think BBC educational explainer.",
     "Uplifting": "Warm, inspiring, forward-looking. Close on hope or human agency. Think TED Talk.",
 }
 
@@ -19,7 +20,9 @@ class OpenAIService:
     def __init__(self) -> None:
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
 
-    async def generate_script(self, idea: str, tone: str, length: str) -> tuple[str, int]:
+    async def generate_script(
+        self, idea: str, tone: str, length: str
+    ) -> tuple[str, int]:
         for attempt in range(1, settings.max_retries + 1):
             try:
                 response = await self._client.chat.completions.create(
@@ -27,7 +30,10 @@ class OpenAIService:
                     max_tokens=2048,
                     messages=[
                         {"role": "system", "content": self._system_prompt()},
-                        {"role": "user", "content": self._user_prompt(idea, tone, length)},
+                        {
+                            "role": "user",
+                            "content": self._user_prompt(idea, tone, length),
+                        },
                     ],
                     timeout=settings.request_timeout,
                 )
@@ -37,14 +43,16 @@ class OpenAIService:
                 return script, tokens
 
             except RateLimitError:
-                wait = 2 ** attempt
+                wait = 2**attempt
                 logger.warning("OpenAI rate limited. Retrying in %ds", wait)
                 await asyncio.sleep(wait)
 
             except APIError as exc:
                 if attempt == settings.max_retries:
-                    raise RuntimeError(f"OpenAI failed after {settings.max_retries} attempts: {exc}") from exc
-                await asyncio.sleep(2 ** attempt)
+                    raise RuntimeError(
+                        f"OpenAI failed after {settings.max_retries} attempts: {exc}"
+                    ) from exc
+                await asyncio.sleep(2**attempt)
 
         raise RuntimeError("OpenAI generation failed: max retries exceeded")
 
