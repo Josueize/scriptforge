@@ -12,7 +12,6 @@ from app.models.schemas import (
 )
 from app.orchestrator.pipeline import ContentPipeline
 
-
 logger = logging.getLogger("scriptforge.routes")
 router = APIRouter()
 pipeline = ContentPipeline()
