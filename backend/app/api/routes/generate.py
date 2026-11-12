@@ -12,19 +12,14 @@ from app.models.schemas import (
 )
 from app.orchestrator.pipeline import ContentPipeline
 
-# --------------------------------------------------
-# Logging and router configuration
-# --------------------------------------------------
 
 logger = logging.getLogger("scriptforge.routes")
-
 router = APIRouter()
-
 pipeline = ContentPipeline()
 
 
 # --------------------------------------------------
-# Generate content using the AI pipeline
+# Generate content using OpenAI and Claude
 # --------------------------------------------------
 
 
@@ -42,15 +37,18 @@ async def generate_content(
         ) from exc
 
     except RuntimeError as exc:
-        logger.error("Pipeline error: %s", exc)
+        logger.error(
+            "Content pipeline failed: %s",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=502,
             detail="Content generation failed. Please try again.",
         ) from exc
 
     except Exception as exc:
-        # Catch unexpected failures at the API boundary.
-        logger.exception("Unexpected pipeline error")
+        # Catch unexpected errors at the API boundary.
+        logger.exception("Unexpected content generation error")
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred.",
@@ -67,65 +65,64 @@ async def approve_content(
     request: ApproveRequest,
 ) -> ApproveResponse:
 
-    # Approval succeeds even when automation is not configured.
-    if not settings.n8n_webhook_url:
-        logger.info(
-            "Content approved without automation | content_id=%s",
-            request.content_id,
-        )
+    # Check that n8n is configured securely.
+    if not settings.n8n_webhook_url or not settings.n8n_webhook_token:
+        logger.warning("n8n webhook URL or authentication token missing")
 
         return ApproveResponse(
-            success=True,
-            message="Approved. Automation not configured.",
+            success=False,
+            message=("Automation is not configured. Please contact the administrator."),
         )
 
+    # Prepare the approval event sent to n8n.
     payload = {
         "content_id": request.content_id,
         "platforms": request.platforms,
         "event": "content_approved",
     }
 
+    # Send authenticated request to n8n.
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 settings.n8n_webhook_url,
                 json=payload,
+                headers={
+                    "X-ScriptForge-Token": (settings.n8n_webhook_token),
+                },
             )
 
-            # Raise an exception for HTTP 4xx and 5xx responses.
+            # Raise errors for HTTP 4xx or 5xx.
             response.raise_for_status()
 
     except httpx.TimeoutException:
         logger.warning(
-            "n8n webhook timed out | content_id=%s",
+            "n8n webhook timeout | content_id=%s",
             request.content_id,
         )
 
         return ApproveResponse(
             success=False,
             message=(
-                "Content approved, but the automation request timed out. Check n8n."
+                "Approval request received, but the automation timed out. Check n8n."
             ),
         )
 
     except httpx.HTTPStatusError as exc:
         logger.error(
-            "n8n webhook HTTP error | content_id=%s | status=%s",
-            request.content_id,
+            "n8n webhook returned HTTP %s | content_id=%s",
             exc.response.status_code,
+            request.content_id,
         )
 
         return ApproveResponse(
             success=False,
-            message=(
-                "Content approved, but the automation webhook "
-                "returned an error. Check n8n."
-            ),
+            message=("Approval request received, but n8n returned an error."),
         )
 
     except httpx.RequestError as exc:
         logger.error(
-            "n8n webhook connection error | content_id=%s | error=%s",
+            "n8n connection failed | content_id=%s | error=%s",
             request.content_id,
             type(exc).__name__,
         )
@@ -133,7 +130,8 @@ async def approve_content(
         return ApproveResponse(
             success=False,
             message=(
-                "Content approved, but the automation service could not be reached."
+                "Approval request received, but the "
+                "automation service could not be reached."
             ),
         )
 
@@ -144,5 +142,5 @@ async def approve_content(
 
     return ApproveResponse(
         success=True,
-        message="Approved. Automation pipeline triggered.",
+        message="Content approved. Automation request accepted by n8n.",
     )
