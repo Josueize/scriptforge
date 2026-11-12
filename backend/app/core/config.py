@@ -21,17 +21,18 @@ class Settings(BaseSettings):
     request_timeout: int = 60
 
     # -----------------------------------------
-    # n8n automation
+    # n8n automation configuration
     # -----------------------------------------
     n8n_webhook_url: str = ""
+    n8n_webhook_token: str = ""
 
     # -----------------------------------------
-    # PostgreSQL database
+    # PostgreSQL database configuration
     # -----------------------------------------
     database_url: str = "postgresql://user:password@localhost:5432/scriptforge"
 
     # -----------------------------------------
-    # Pydantic Settings configuration
+    # Pydantic environment configuration
     # -----------------------------------------
     model_config = SettingsConfigDict(
         env_file=".env",
