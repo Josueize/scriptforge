@@ -1,9 +1,14 @@
+
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.database import get_db
+from app.db.models import GeneratedContent
 from app.models.schemas import (
     ApproveRequest,
     ApproveResponse,
@@ -12,134 +17,402 @@ from app.models.schemas import (
 )
 from app.orchestrator.pipeline import ContentPipeline
 
+
+# ==================================================
+# INITIALIZATION
+# ==================================================
+
 logger = logging.getLogger("scriptforge.routes")
+
 router = APIRouter()
+
 pipeline = ContentPipeline()
 
 
-# --------------------------------------------------
-# Generate content using OpenAI and Claude
-# --------------------------------------------------
-
+# ==================================================
+# GENERATE CONTENT
+#
+# OpenAI -> Claude -> PostgreSQL
+# ==================================================
 
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_content(
     request: GenerateRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> GenerateResponse:
+
+    # ----------------------------------------------
+    # STEP 1: GENERATE CONTENT USING AI
+    # ----------------------------------------------
+
     try:
-        return await pipeline.run(request)
+        result = await pipeline.run(request)
 
     except ValueError as exc:
+        logger.warning(
+            "Content validation failed | error_type=%s",
+            type(exc).__name__,
+        )
+
         raise HTTPException(
             status_code=422,
             detail=str(exc),
         ) from exc
 
     except RuntimeError as exc:
-        logger.error(
-            "Content pipeline failed: %s",
+        logger.exception(
+            "AI generation pipeline failed | error_type=%s",
             type(exc).__name__,
         )
+
         raise HTTPException(
             status_code=502,
-            detail="Content generation failed. Please try again.",
+            detail=(
+                "Content generation failed. "
+                "Please try again."
+            ),
         ) from exc
 
     except Exception as exc:
-        # Catch unexpected errors at the API boundary.
-        logger.exception("Unexpected content generation error")
+        logger.exception(
+            "Unexpected content generation error"
+        )
+
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred.",
         ) from exc
 
+    # ----------------------------------------------
+    # STEP 2: PREPARE DATABASE RECORD
+    # ----------------------------------------------
 
-# --------------------------------------------------
-# Approve content and trigger n8n automation
-# --------------------------------------------------
+    record = GeneratedContent(
+        id=result.id,
+        idea=request.idea,
+        tone=request.tone,
+        length=request.length,
+        script=result.script,
+        platforms={
+            "items": [
+                platform.model_dump()
+                for platform in result.platforms
+            ]
+        },
+        tokens_used=result.metadata.tokens_used,
+        status="pending",
+    )
 
+    # ----------------------------------------------
+    # STEP 3: SAVE CONTENT TO POSTGRESQL
+    # ----------------------------------------------
+
+    try:
+        db.add(record)
+
+        await db.commit()
+
+    except SQLAlchemyError as exc:
+        await db.rollback()
+
+        logger.exception(
+            "Database persistence failed | content_id=%s",
+            result.id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Generated content could not be saved.",
+        ) from exc
+
+    # ----------------------------------------------
+    # STEP 4: LOG SUCCESS
+    # ----------------------------------------------
+
+    logger.info(
+        "Generated content saved | content_id=%s",
+        result.id,
+    )
+
+    # ----------------------------------------------
+    # STEP 5: RETURN GENERATED CONTENT
+    # ----------------------------------------------
+
+    return result
+
+
+# ==================================================
+# APPROVE CONTENT
+#
+# PostgreSQL -> n8n -> Google Docs
+#
+# Expected n8n payload:
+#
+# {
+#     "title": "...",
+#     "status": "approved",
+#     "script": "..."
+# }
+#
+# Authentication:
+# X-ScriptForge-Key
+# ==================================================
 
 @router.post("/approve", response_model=ApproveResponse)
 async def approve_content(
     request: ApproveRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> ApproveResponse:
 
-    # Check that n8n is configured securely.
-    if not settings.n8n_webhook_url or not settings.n8n_webhook_token:
-        logger.warning("n8n webhook URL or authentication token missing")
+    content_id = request.content_id
 
-        return ApproveResponse(
-            success=False,
-            message=("Automation is not configured. Please contact the administrator."),
-        )
+    # ----------------------------------------------
+    # STEP 1: VERIFY N8N CONFIGURATION
+    # ----------------------------------------------
 
-    # Prepare the approval event sent to n8n.
-    payload = {
-        "content_id": request.content_id,
-        "platforms": request.platforms,
-        "event": "content_approved",
-    }
-
-    # Send authenticated request to n8n.
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                settings.n8n_webhook_url,
-                json=payload,
-                headers={
-                    "X-ScriptForge-Token": (settings.n8n_webhook_token),
-                },
-            )
-
-            # Raise errors for HTTP 4xx or 5xx.
-            response.raise_for_status()
-
-    except httpx.TimeoutException:
-        logger.warning(
-            "n8n webhook timeout | content_id=%s",
-            request.content_id,
+    if (
+        not settings.n8n_webhook_url
+        or not settings.n8n_webhook_token
+    ):
+        logger.error(
+            "n8n webhook configuration is missing"
         )
 
         return ApproveResponse(
             success=False,
             message=(
-                "Approval request received, but the automation timed out. Check n8n."
+                "n8n automation is not configured. "
+                "Please contact the administrator."
             ),
         )
 
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "n8n webhook returned HTTP %s | content_id=%s",
-            exc.response.status_code,
-            request.content_id,
+    # ----------------------------------------------
+    # STEP 2: FETCH CONTENT FROM POSTGRESQL
+    # ----------------------------------------------
+
+    try:
+        record = await db.get(
+            GeneratedContent,
+            content_id,
+        )
+
+    except SQLAlchemyError as exc:
+        logger.exception(
+            "Database retrieval failed | content_id=%s",
+            content_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to retrieve generated content.",
+        ) from exc
+
+    # ----------------------------------------------
+    # STEP 3: VERIFY CONTENT EXISTS
+    # ----------------------------------------------
+
+    if record is None:
+        logger.warning(
+            "Approval requested for missing content | "
+            "content_id=%s",
+            content_id,
+        )
+
+        raise HTTPException(
+            status_code=404,
+            detail="Generated content not found.",
+        )
+
+    # ----------------------------------------------
+    # STEP 4: CHECK APPROVAL STATUS
+    # ----------------------------------------------
+
+    if record.status == "approved":
+        logger.info(
+            "Content already approved | content_id=%s",
+            content_id,
+        )
+
+        return ApproveResponse(
+            success=True,
+            message=(
+                "Content was already approved. "
+                "No additional webhook was sent."
+            ),
+        )
+
+    if record.status != "pending":
+        logger.warning(
+            "Invalid approval status | "
+            "content_id=%s | status=%s",
+            content_id,
+            record.status,
+        )
+
+        raise HTTPException(
+            status_code=409,
+            detail="Content is not awaiting approval.",
+        )
+
+    # ----------------------------------------------
+    # STEP 5: VALIDATE SAVED SCRIPT
+    # ----------------------------------------------
+
+    if not record.script or not record.script.strip():
+        logger.warning(
+            "Approval attempted with empty script | "
+            "content_id=%s",
+            content_id,
+        )
+
+        raise HTTPException(
+            status_code=422,
+            detail="Generated content has no script.",
+        )
+
+    # ----------------------------------------------
+    # STEP 6: PREPARE N8N PAYLOAD
+    # ----------------------------------------------
+
+    payload = {
+        "title": f"ScriptForge - {record.idea}",
+        "status": "approved",
+        "script": record.script,
+    }
+
+    logger.info(
+        "Sending approved content to n8n | "
+        "content_id=%s",
+        content_id,
+    )
+
+    # ----------------------------------------------
+    # STEP 7: SEND APPROVAL TO N8N
+    # ----------------------------------------------
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            follow_redirects=False,
+        ) as client:
+
+            response = await client.post(
+                settings.n8n_webhook_url,
+                json=payload,
+                headers={
+                    "X-ScriptForge-Key": (
+                        settings.n8n_webhook_token
+                    ),
+                    "Content-Type": "application/json",
+                },
+            )
+
+            response.raise_for_status()
+
+    # ----------------------------------------------
+    # STEP 8: HANDLE TIMEOUT ERRORS
+    # ----------------------------------------------
+
+    except httpx.TimeoutException:
+        logger.warning(
+            "n8n webhook timed out | content_id=%s",
+            content_id,
         )
 
         return ApproveResponse(
             success=False,
-            message=("Approval request received, but n8n returned an error."),
+            message=(
+                "n8n request timed out. "
+                "Check n8n execution history "
+                "before retrying."
+            ),
         )
+
+    # ----------------------------------------------
+    # STEP 9: HANDLE N8N HTTP ERRORS
+    # ----------------------------------------------
+
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "n8n returned HTTP %s | content_id=%s",
+            exc.response.status_code,
+            content_id,
+        )
+
+        return ApproveResponse(
+            success=False,
+            message=(
+                "n8n rejected the approval request. "
+                "Check the webhook configuration."
+            ),
+        )
+
+    # ----------------------------------------------
+    # STEP 10: HANDLE NETWORK ERRORS
+    # ----------------------------------------------
 
     except httpx.RequestError as exc:
         logger.error(
-            "n8n connection failed | content_id=%s | error=%s",
-            request.content_id,
+            "Unable to contact n8n | "
+            "content_id=%s | error_type=%s",
+            content_id,
             type(exc).__name__,
         )
 
         return ApproveResponse(
             success=False,
             message=(
-                "Approval request received, but the "
-                "automation service could not be reached."
+                "Unable to contact the automation service. "
+                "Check n8n before retrying."
             ),
         )
 
+    # ----------------------------------------------
+    # STEP 11: UPDATE CONTENT STATUS
+    # ----------------------------------------------
+
+    try:
+        record.status = "approved"
+
+        await db.commit()
+
+    except SQLAlchemyError as exc:
+        await db.rollback()
+
+        logger.exception(
+            "Approval status update failed | "
+            "content_id=%s",
+            content_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "n8n accepted the request, but "
+                "the database update failed. "
+                "Check n8n before retrying."
+            ),
+        ) from exc
+
+    # ----------------------------------------------
+    # STEP 12: LOG APPROVAL
+    # ----------------------------------------------
+
     logger.info(
-        "n8n webhook accepted | content_id=%s",
-        request.content_id,
+        "Content approved and webhook accepted | "
+        "content_id=%s",
+        content_id,
     )
+
+    # ----------------------------------------------
+    # STEP 13: RETURN SUCCESS RESPONSE
+    # ----------------------------------------------
 
     return ApproveResponse(
         success=True,
-        message="Content approved. Automation request accepted by n8n.",
+        message=(
+            "Content approved and sent to n8n. "
+            "Check n8n execution history to "
+            "verify Google Docs creation."
+        ),
     )

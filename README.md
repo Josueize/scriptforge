@@ -1,9 +1,9 @@
-# ScriptForge — AI Content Generation Platform
+# ScriptForge â€” AI Content Generation Platform
 
-A production-ready, multi-agent content platform. Enter one idea — get a production-ready video script and platform-specific assets across YouTube, LinkedIn, X/Twitter, Newsletter, and SEO Blog automatically.
+A production-ready, multi-agent content platform. Enter one idea â€” get a production-ready video script and platform-specific assets across YouTube, LinkedIn, X/Twitter, Newsletter, and SEO Blog automatically.
 
 **Live app:** [scriptforge-eosin.vercel.app](https://scriptforge-eosin.vercel.app)  
-**Stack:** React + TypeScript · Python FastAPI · OpenAI GPT-4o · Claude Sonnet · n8n · Vercel · Google Cloud Run
+**Stack:** React + TypeScript Â· Python FastAPI Â· OpenAI GPT-4o Â· Claude Sonnet Â· n8n Â· Vercel Â· Google Cloud Run
 
 ---
 
@@ -15,7 +15,7 @@ A content strategist enters:
 - A target video length (1 / 3 / 5 / 10 minutes)
 - Output platforms (YouTube, LinkedIn, Twitter, Newsletter, SEO Blog)
 
-ScriptForge runs a multi-agent AI pipeline and returns a fully structured script plus platform-specific content for every selected channel — ready to review, approve, and publish.
+ScriptForge runs a multi-agent AI pipeline and returns a fully structured script plus platform-specific content for every selected channel â€” ready to review, approve, and publish.
 
 ---
 
@@ -23,22 +23,22 @@ ScriptForge runs a multi-agent AI pipeline and returns a fully structured script
 
 ```
 User Input
-    ↓
+    â†“
 React + TypeScript Frontend  (Vercel)
-    ↓ POST /api/generate
+    â†“ POST /api/generate
 Python FastAPI Backend  (Google Cloud Run)
-    ↓
-OpenAI GPT-4o  →  Initial script generation
-    ↓
-Claude Sonnet  →  Tone refinement & quality pass
-    ↓
+    â†“
+OpenAI GPT-4o  â†’  Initial script generation
+    â†“
+Claude Sonnet  â†’  Tone refinement & quality pass
+    â†“
 Validation Layer
-    ↓
-Claude Sonnet  →  Parallel platform formatting (asyncio.gather)
-    ↓
-PostgreSQL  →  Content storage (Neon)
-    ↓
-[On approval] n8n Webhook  →  Slack · Google Doc · CMS · Schedule
+    â†“
+Claude Sonnet  â†’  Parallel platform formatting (asyncio.gather)
+    â†“
+PostgreSQL  â†’  Content storage (Neon)
+    â†“
+[On approval] n8n Webhook  â†’  Slack Â· Google Doc Â· CMS Â· Schedule
 ```
 
 ---
@@ -49,8 +49,8 @@ PostgreSQL  →  Content storage (Neon)
 |---|---|
 | Frontend | React 18 + TypeScript + Vite |
 | Backend | Python 3.12 + FastAPI |
-| AI — generation | OpenAI GPT-4o |
-| AI — refinement | Anthropic Claude Sonnet |
+| AI â€” generation | OpenAI GPT-4o |
+| AI â€” refinement | Anthropic Claude Sonnet |
 | Database | PostgreSQL (Neon) |
 | Automation | n8n |
 | Frontend hosting | Vercel |
@@ -66,13 +66,13 @@ Every push to main triggers a 4-stage pipeline:
 
 ```
 Push to main
-     ↓
-Job 1: Frontend — npm ci + tsc + vite build
-Job 2: Backend  — pip install + ruff lint + mypy type check
-     ↓ (both must pass)
-Job 3: Docker   — build image + push to Artifact Registry
-     ↓
-Job 4: Deploy   — Google Cloud Run auto-deployment
+     â†“
+Job 1: Frontend â€” npm ci + tsc + vite build
+Job 2: Backend  â€” pip install + ruff lint + mypy type check
+     â†“ (both must pass)
+Job 3: Docker   â€” build image + push to Artifact Registry
+     â†“
+Job 4: Deploy   â€” Google Cloud Run auto-deployment
 ```
 
 ---
@@ -80,7 +80,7 @@ Job 4: Deploy   — Google Cloud Run auto-deployment
 ## Key engineering decisions
 
 **Why two AI models?**
-GPT-4o handles creative generation. Claude handles tone refinement and platform formatting. Each model does what it's better at — specialisation, not redundancy.
+GPT-4o handles creative generation. Claude handles tone refinement and platform formatting. Each model does what it's better at â€” specialisation, not redundancy.
 
 **Why asyncio.gather for platform formatting?**
 Platform jobs are independent. Running them concurrently reduces formatting time from O(n) to roughly O(1).
@@ -92,7 +92,7 @@ The pipeline is completely separated from the HTTP layer. It can be triggered fr
 Every API call uses exponential backoff (2^attempt seconds). Rate limits and API errors are caught separately. After max retries the error propagates cleanly as a 502.
 
 **Prompt versioning**
-Tone instructions live in config objects — brand voice updates are one-line changes, not code changes.
+Tone instructions live in config objects â€” brand voice updates are one-line changes, not code changes.
 
 ---
 
@@ -118,17 +118,17 @@ App runs at `http://localhost:3000`
 
 ## Deployment
 
-**Frontend → Vercel**
+**Frontend â†’ Vercel**
 ```bash
 cd frontend && vercel
 ```
 
-**Backend → Google Cloud Run**
+**Backend â†’ Google Cloud Run**
 ```bash
 gcloud run deploy scriptforge-api --source ./backend --region us-east1 --allow-unauthenticated
 ```
 
-Or push to main — the GitHub Actions pipeline deploys automatically.
+Or push to main â€” the GitHub Actions pipeline deploys automatically.
 
 ---
 
@@ -136,8 +136,8 @@ Or push to main — the GitHub Actions pipeline deploys automatically.
 
 **Backend `.env`**
 ```
-OPENAI_API_KEY=sk-proj-...
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 N8N_WEBHOOK_URL=https://your-n8n-webhook-url
 DATABASE_URL=postgresql://user:password@host:5432/scriptforge
 ```
