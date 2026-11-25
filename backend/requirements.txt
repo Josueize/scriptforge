@@ -9,3 +9,6 @@ sqlalchemy==2.0.35
 asyncpg==0.29.0
 python-dotenv==1.0.1
 alembic>=1.14,<2
+
+pwdlib[argon2]==0.4.2
+PyJWT[crypto]==2.14.0

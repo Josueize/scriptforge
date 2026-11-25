@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # -----------------------------------------
     # Pydantic environment configuration
     # -----------------------------------------
+    # -----------------------------------------
+    # Administrator authentication
+    # -----------------------------------------
+    admin_username: str = ""
+    admin_password_hash: str = ""
+    session_secret_key: str = ""
+    session_expire_minutes: int = 480
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

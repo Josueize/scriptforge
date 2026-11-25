@@ -1,11 +1,13 @@
+
 import os
 from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import generate, health
+from app.api.routes import auth, generate, health
 from app.core.logging import setup_logging
+
 
 # --------------------------------------------------
 # 1. Configure application logging
@@ -21,7 +23,8 @@ setup_logging()
 app = FastAPI(
     title="ScriptForge API",
     description=(
-        "Multi-agent AI content generation pipeline for Blue Foxes AI Content Lab."
+        "Multi-agent AI content generation pipeline "
+        "for Blue Foxes AI Content Lab."
     ),
     version="1.0.0",
 )
@@ -31,11 +34,13 @@ app = FastAPI(
 # 3. Configure allowed frontend origins
 # --------------------------------------------------
 
-
 def get_allowed_origins() -> list[str]:
     """
-    Allow local development and the production
-    frontend configured in Railway.
+    Allow local React development and explicitly
+    configured production frontend origins.
+
+    FRONTEND_URL may contain one or more
+    comma-separated origins.
     """
 
     origins = [
@@ -45,29 +50,34 @@ def get_allowed_origins() -> list[str]:
         "http://127.0.0.1:5173",
     ]
 
-    frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    frontend_urls = os.getenv(
+        "FRONTEND_URL", ""
+    ).strip()
 
-    if frontend_url:
-        parsed = urlparse(frontend_url)
+    if frontend_urls:
+        for frontend_url in frontend_urls.split(","):
+            frontend_url = frontend_url.strip().rstrip("/")
 
-        if (
-            parsed.scheme not in ("http", "https")
-            or not parsed.netloc
-            or parsed.username
-            or parsed.password
-            or parsed.path not in ("", "/")
-            or parsed.params
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError(
-                "FRONTEND_URL must be a valid frontend origin, "
-                "such as https://scriptforge.vercel.app"
-            )
+            parsed = urlparse(frontend_url)
 
-        origins.append(frontend_url)
+            if (
+                parsed.scheme not in ("http", "https")
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+                or parsed.path not in ("", "/")
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "FRONTEND_URL must contain valid origins, "
+                    "such as https://scriptforge.vercel.app"
+                )
 
-    return origins
+            origins.append(frontend_url)
+
+    return list(dict.fromkeys(origins))
 
 
 # --------------------------------------------------
@@ -77,14 +87,21 @@ def get_allowed_origins() -> list[str]:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_credentials=True,
+    allow_methods=[
+        "GET",
+        "POST",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Content-Type",
+        "X-CSRF-Token",
+    ],
 )
 
 
 # --------------------------------------------------
-# 5. Register API routes
+# 5. Register health routes
 # --------------------------------------------------
 
 app.include_router(
@@ -93,8 +110,24 @@ app.include_router(
     tags=["health"],
 )
 
+
+# --------------------------------------------------
+# 6. Register AI generation and approval routes
+# --------------------------------------------------
+
 app.include_router(
     generate.router,
     prefix="/api",
     tags=["generate"],
+)
+
+
+# --------------------------------------------------
+# 7. Register administrator authentication routes
+# --------------------------------------------------
+
+app.include_router(
+    auth.router,
+    prefix="/api/auth",
+    tags=["authentication"],
 )
