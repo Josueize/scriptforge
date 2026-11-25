@@ -1,6 +1,6 @@
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from fastapi import (
@@ -13,11 +13,10 @@ from fastapi import (
     Response,
     status,
 )
-from pydantic import BaseModel, Field
 from pwdlib import PasswordHash
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
-
 
 router = APIRouter()
 password_hash = PasswordHash.recommended()
@@ -78,7 +77,7 @@ def cookie_options(request: Request) -> dict:
 
 
 def create_session_token(username: str, csrf_token: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     expires = now + timedelta(
         minutes=settings.session_expire_minutes
