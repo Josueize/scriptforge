@@ -3,9 +3,12 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 env:
   PROJECT_ID: scriptforge-bluefoxes
@@ -16,7 +19,7 @@ env:
 jobs:
 
   # ============================================
-  # JOB 1: Frontend Build & Type Check
+  # JOB 1 — Frontend Build & Type Check
   # ============================================
 
   frontend:
@@ -51,7 +54,7 @@ jobs:
         run: npm run build
 
   # ============================================
-  # JOB 2: Backend Lint, Type Check & Tests
+  # JOB 2 — Backend Lint & Type Check
   # ============================================
 
   backend:
@@ -79,7 +82,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff mypy pytest
+          pip install ruff mypy
 
       - name: Lint with Ruff
         run: python -m ruff check app/
@@ -91,14 +94,17 @@ jobs:
         run: python -m compileall -q app/
 
   # ============================================
-  # JOB 3: Validate Docker Build on PRs
+  # JOB 3 — Validate Docker Build
+  # Runs on pull requests and main
   # ============================================
 
   docker-check:
     name: Docker - validate build
     runs-on: ubuntu-latest
 
-    needs: [frontend, backend]
+    needs:
+      - frontend
+      - backend
 
     permissions:
       contents: read
@@ -114,15 +120,18 @@ jobs:
             ./backend
 
   # ============================================
-  # JOB 4: Build & Push Docker Image
-  # Only runs after a push to main
+  # JOB 4 — Docker Build & Push
+  # Runs only on pushes to main
   # ============================================
 
   docker:
     name: Docker - build & push
     runs-on: ubuntu-latest
 
-    needs: [frontend, backend, docker-check]
+    needs:
+      - frontend
+      - backend
+      - docker-check
 
     if: >-
       github.ref == 'refs/heads/main' &&
@@ -170,15 +179,16 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/scriptforge/${{ env.SERVICE_NAME }}:latest"
 
   # ============================================
-  # JOB 5: Deploy to Google Cloud Run
-  # Only runs after Docker publishing succeeds
+  # JOB 5 — Deploy to Google Cloud Run
+  # Runs only after successful Docker publishing
   # ============================================
 
   deploy:
     name: Deploy - Google Cloud Run
     runs-on: ubuntu-latest
 
-    needs: [docker]
+    needs:
+      - docker
 
     if: >-
       github.ref == 'refs/heads/main' &&
@@ -192,6 +202,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ----------------------------------------
+      # Validate required production settings
+      # ----------------------------------------
+
       - name: Validate production configuration
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -203,6 +217,7 @@ jobs:
           ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
           SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}
           FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+
         shell: bash
         run: |
           set -euo pipefail
@@ -232,21 +247,31 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "$FRONTEND_URL" =~ ^https:// ]]; then
-            echo "::error::FRONTEND_URL must use HTTPS"
+          if [[ "$FRONTEND_URL" != \
+            "https://scriptforge-eosin.vercel.app" ]]; then
+            echo "::error::Unexpected frontend production URL"
             exit 1
           fi
 
-          echo "Required production configuration is present."
+          echo "Production configuration validated."
+
+      # ----------------------------------------
+      # Authenticate to Google Cloud
+      # ----------------------------------------
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Deploy to Cloud Run
+      # ----------------------------------------
+      # Deploy FastAPI to Cloud Run
+      # ----------------------------------------
+
+      - name: Deploy to Google Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
+
         with:
           project_id: ${{ env.PROJECT_ID }}
           service: ${{ env.SERVICE_NAME }}
@@ -266,6 +291,11 @@ jobs:
             ADMIN_PASSWORD_HASH=${{ secrets.ADMIN_PASSWORD_HASH }}
             SESSION_SECRET_KEY=${{ secrets.SESSION_SECRET_KEY }}
             FRONTEND_URL=${{ vars.FRONTEND_URL }}
+            AUTH_COOKIE_SECURE=true
+
+      # ----------------------------------------
+      # Display deployed service URL
+      # ----------------------------------------
 
       - name: Show deployed URL
         run: |
