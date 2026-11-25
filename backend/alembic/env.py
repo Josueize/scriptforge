@@ -2,7 +2,6 @@
 import asyncio
 
 from alembic import context
-
 from app.db.database import engine
 from app.db.models import Base, GeneratedContent  # noqa: F401
 

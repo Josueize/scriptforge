@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.auth import require_csrf
 from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import GeneratedContent
@@ -16,7 +17,6 @@ from app.models.schemas import (
     GenerateResponse,
 )
 from app.orchestrator.pipeline import ContentPipeline
-
 
 # ==================================================
 # INITIALIZATION
@@ -32,10 +32,17 @@ pipeline = ContentPipeline()
 # ==================================================
 # GENERATE CONTENT
 #
+# Administrator authentication required
+# CSRF verification required
+#
 # OpenAI -> Claude -> PostgreSQL
 # ==================================================
 
-@router.post("/generate", response_model=GenerateResponse)
+@router.post(
+    "/generate",
+    response_model=GenerateResponse,
+    dependencies=[Depends(require_csrf)],
+)
 async def generate_content(
     request: GenerateRequest,
     db: AsyncSession = Depends(get_db),
@@ -144,21 +151,17 @@ async def generate_content(
 # ==================================================
 # APPROVE CONTENT
 #
+# Administrator authentication required
+# CSRF verification required
+#
 # PostgreSQL -> n8n -> Google Docs
-#
-# Expected n8n payload:
-#
-# {
-#     "title": "...",
-#     "status": "approved",
-#     "script": "..."
-# }
-#
-# Authentication:
-# X-ScriptForge-Key
 # ==================================================
 
-@router.post("/approve", response_model=ApproveResponse)
+@router.post(
+    "/approve",
+    response_model=ApproveResponse,
+    dependencies=[Depends(require_csrf)],
+)
 async def approve_content(
     request: ApproveRequest,
     db: AsyncSession = Depends(get_db),
